@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#eef8fe">
 <meta name="description" content="一封藏在贴纸里的信">
 <meta name="format-detection" content="telephone=no,email=no,address=no">
-<meta name="gift-version" content="2.3.3">
+<meta name="gift-version" content="2.4.3">
 <meta name="gift-build" content="">
 <title>给你</title>
 <!--
@@ -375,8 +375,11 @@ body::before{
 .toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* ══ 音乐按钮 ══
-   空闲：几乎透明，只剩一个淡轮廓
-   播放：实心冰蓝，图标换成跳动的均衡器
+   规则只有一条：只有"交互"才显色，其余时候一律隐色。
+   隐色 = 比背景深一点点的那一层淡冰蓝（不是纯白，纯白在浅背景上等于消失），
+   看得见轮廓和图标，但不抢正文的眼；播放中、引导中也是这个淡度
+   显色（悬停 / 键盘聚焦 / 按下）：实心冰蓝 + 白色图标 + 投影
+   播放与否只换图标（音符 ⇄ 均衡器），不靠颜色区分
    z-index 45：要压在信封(20)和引导蒙版(40)之上，不然点不到也看不见 */
 .music{
   position:fixed;
@@ -385,48 +388,60 @@ body::before{
   z-index:45;
   display:flex;align-items:center;justify-content:center;
   width:46px;height:46px;padding:0;
-  border:1px solid rgba(203,229,242,.85);
+  border:1px solid rgba(168,213,234,.75);
   border-radius:50%;
   background:rgba(255,255,255,.5);
-  color:#c2d8e4;
+  color:#9dc9dd;                                /* 淡冰蓝图标：比背景深一档 */
   cursor:pointer;
   touch-action:manipulation;
   -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
-  box-shadow:0 2px 10px -6px rgba(63,143,179,.5);
-  transition:background .36s ease,color .36s ease,border-color .36s ease,
-             box-shadow .36s ease,transform .18s ease;
-}
-.music:active{transform:scale(.94)}
-.music:hover{color:#a8c6d6;box-shadow:0 4px 14px -8px rgba(63,143,179,.6)}
-
-/* 引导进行时：把按钮点亮成明确的目标 */
-.music.spot{
-  background:#ffffff;
-  border-color:#9fd4ea;
-  color:#3f8fb3;
-  box-shadow:0 0 0 7px rgba(255,255,255,.16), 0 10px 24px -10px rgba(18,44,60,.7);
+  box-shadow:0 2px 10px -6px rgba(63,143,179,.45);
+  opacity:.62;                                  /* 隐色基准：半透明，接近看不到 */
+  -webkit-tap-highlight-color:transparent;
+  transition:background .3s ease,color .3s ease,border-color .3s ease,
+             box-shadow .3s ease,transform .18s ease,opacity .3s ease;
 }
 
 .music .ic{width:19px;height:19px;display:block}
 .music .bars{display:none}
 
-.music.playing{
+/* 播放中：只换图标，颜色仍是隐色 */
+.music.playing .note{display:none}
+.music.playing .bars{display:block}
+/* 静态三条，不做缩放动画：WebView 里 transform-box 支持不一致，
+   动画会把竖条压成三个点，反而不像"在播" */
+
+/* 引导阶段也不点亮，只把存在感抬高一点，指路交给箭头 */
+.music.spot{opacity:.85}
+
+/* ── 显色：唯一的入口是交互 ──
+   三条规则分开写，不用逗号合在一起：老浏览器不认识 :focus-visible 时
+   会把整个选择器列表判为非法，那样连 :active 一起丢掉 */
+.music:active{
+  opacity:1;
   background:linear-gradient(158deg,#8ed3ee,#5cb0d4);
   border-color:#63b7d9;
   color:#fff;
-  box-shadow:0 10px 24px -12px rgba(46,128,164,.85);
+  box-shadow:0 0 0 4px rgba(142,211,238,.16), 0 10px 24px -12px rgba(46,128,164,.85);
+  transform:scale(.94);
 }
-.music.playing .note{display:none}
-.music.playing .bars{display:block}
-.music.playing .bars rect{
-  transform-box:fill-box;transform-origin:50% 50%;
-  animation:eqBar .95s ease-in-out infinite;
+.music:focus-visible{
+  opacity:1;
+  background:linear-gradient(158deg,#8ed3ee,#5cb0d4);
+  border-color:#63b7d9;
+  color:#fff;
+  box-shadow:0 0 0 4px rgba(142,211,238,.16), 0 10px 24px -12px rgba(46,128,164,.85);
+  outline:none;
 }
-.music.playing .bars rect:nth-child(2){animation-delay:.16s}
-.music.playing .bars rect:nth-child(3){animation-delay:.32s}
-@keyframes eqBar{
-  0%,100%{transform:scaleY(.42)}
-  50%{transform:scaleY(1)}
+/* 触屏没有真悬停，用 hover:hover 隔离，避免点完一直亮着 */
+@media (hover:hover){
+  .music:hover{
+    opacity:1;
+    background:linear-gradient(158deg,#8ed3ee,#5cb0d4);
+    border-color:#63b7d9;
+    color:#fff;
+    box-shadow:0 0 0 4px rgba(142,211,238,.16), 0 10px 24px -12px rgba(46,128,164,.85);
+  }
 }
 
 /* ══ 引导层：灰色蒙版 + 居中文字 + 折线箭头 ══ */
@@ -620,7 +635,7 @@ body::before{
   </section>
 
   <footer class="foot">
-    <!-- <span class="ver" id="ver">v2.3.3</span> -->
+    <!-- <span class="ver" id="ver">v2.3.4</span> -->
   </footer>
 
 </main>
@@ -666,7 +681,7 @@ try {
   /* ═══════════════════════════════════════════════
      版本声明 —— 每次改动后请递增
      ═══════════════════════════════════════════════ */
-  var VERSION = '2.3.3';
+  var VERSION = '2.4.3';
   var BUILD   = '';   // 打包日期，如 '2026-02-14'；留空则只显示版本号
 
   /* ═══════════════════════════════════════════════
@@ -675,7 +690,7 @@ try {
   var CONFIG = {
     to: 'YY',
     from: 'VYV',
-    dateStart: '',        // 在一起的VYV日子 'YYYY-MM-DD'；留空则不显示"第 N 天"
+    dateStart: '',        // 在一起的日子 'YYYY-MM-DD'；留空则不显示"第 N 天"
 
     lead: '有些话写在纸上会旧，\n存在手机里会被一划而过。\n\n所以我把它放进了一个\n需要动手才能打开的地方。',
 
