@@ -8,6 +8,18 @@
 
 ---
 
+## 2.4.8
+
+给网页版加上图标，直接复用 APK 那套 launcher 资源。
+
+- 从 `app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png`（432×432）逐级减半，生成：
+  `assets/favicon.ico`（16/32/48 三档）、`assets/icon-32.png`、`assets/icon-192.png`、
+  `assets/apple-touch-icon.png`（180×180，底下垫了 `#021148`，iOS 加桌面时不会把透明角填黑）
+- `<head>` 里补了 4 个 `<link>`：之前一直没图标，标签页是浏览器默认那张白纸
+- `tools/inline-assets.mjs` 的 MIME 表补了 `.ico`，`dist/index.html` 会把图标一起内联，
+  离线单文件版也不会缺图
+- 体积：dist 2.90 MB → 约 3.06 MB（图标约 122 KB，base64 后 163 KB）
+
 ## 2.4.7
 
 落款的破折号改成和正文一样的一条长线。
