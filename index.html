@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#eef8fe">
 <meta name="description" content="一封藏在贴纸里的信">
 <meta name="format-detection" content="telephone=no,email=no,address=no">
-<meta name="gift-version" content="2.4.3">
+<meta name="gift-version" content="2.4.5">
 <meta name="gift-build" content="">
 <title>给你</title>
 <!--
@@ -317,7 +317,11 @@ body::before{
 }
 @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
 .letter-skip{
-  margin-top:20px;text-align:center;
+  /* 信纸高度固定后，这行字如果还留在文字末尾就会掉到屏幕外，
+     打字期间改成贴在视口底部，一眼能看到；打完自动隐藏 */
+  position:fixed;left:0;right:0;bottom:calc(82px + env(safe-area-inset-bottom));
+  z-index:30;
+  margin:0;text-align:center;
   font-size:11px;letter-spacing:.2em;color:var(--ink-3);
   animation:hintPulse 3.4s ease-in-out infinite;
 }
@@ -408,8 +412,9 @@ body::before{
 /* 播放中：只换图标，颜色仍是隐色 */
 .music.playing .note{display:none}
 .music.playing .bars{display:block}
-/* 静态三条，不做缩放动画：WebView 里 transform-box 支持不一致，
-   动画会把竖条压成三个点，反而不像"在播" */
+/* 三条竖条的呼吸动画由 JS 直接改 rect 的 y / height 完成（见 equalizer）：
+   不用 CSS transform —— WebView 里 transform-box 支持不一致，
+   缩放会把竖条压成三个点。淡出状态下动画照常跑，靠它告诉人"还在播" */
 
 /* 引导阶段也不点亮，只把存在感抬高一点，指路交给箭头 */
 .music.spot{opacity:.85}
@@ -613,12 +618,12 @@ body::before{
 <main class="doc" id="doc" aria-hidden="true">
 
   <section class="sec">
-    <div class="eyebrow"><i></i>壹 · 开头</div>
+    <div class="eyebrow"><i></i>壹 · 序</div>
     <p class="lead" id="lead"></p>
   </section>
 
   <section class="sec" id="photosSec" hidden>
-    <div class="eyebrow"><i></i>贰 · 一些画面</div>
+    <div class="eyebrow"><i></i>贰 · 忆</div>
     <div class="photos-list" id="photos"></div>
   </section>
 
@@ -681,7 +686,7 @@ try {
   /* ═══════════════════════════════════════════════
      版本声明 —— 每次改动后请递增
      ═══════════════════════════════════════════════ */
-  var VERSION = '2.4.3';
+  var VERSION = '2.4.5';
   var BUILD   = '';   // 打包日期，如 '2026-02-14'；留空则只显示版本号
 
   /* ═══════════════════════════════════════════════
@@ -914,10 +919,63 @@ try {
     });
   }
 
+  /* ── 播放中的均衡器 ──
+     三条竖条错开呼吸，淡出状态下也一直动，是"还在播"的唯一提示。
+     直接改 rect 的 y / height，不用 CSS transform：
+     WebView 里 transform-box 支持不一致，缩放会把竖条压成三个点。
+     prefers-reduced-motion 时不跑，保持静态三条。 */
+  var equalizer = (function () {
+    var svg = musicBtn ? musicBtn.querySelector('.bars') : null;
+    var rects = svg ? svg.querySelectorAll('rect') : [];
+    var base = [], raf = null, t0 = 0, i;
+
+    for (i = 0; i < rects.length; i++) {
+      base.push({
+        y: parseFloat(rects[i].getAttribute('y')),
+        h: parseFloat(rects[i].getAttribute('height'))
+      });
+    }
+    if (!base.length) return null;
+
+    function rest() {
+      for (var j = 0; j < base.length; j++) {
+        rects[j].setAttribute('y', base[j].y);
+        rects[j].setAttribute('height', base[j].h);
+      }
+    }
+
+    function frame(t) {
+      if (!t0) t0 = t;
+      var s = (t - t0) / 1000;
+      for (var j = 0; j < base.length; j++) {
+        // 0.45~1 倍高，从中间往两头伸缩；三条均匀错开 120°，
+        // 任何时刻都至少有一条是满高，不会整组缩成三个点
+        var k = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(s * 6 + j * 2.094));
+        var h = base[j].h * k;
+        rects[j].setAttribute('height', h.toFixed(2));
+        rects[j].setAttribute('y', (base[j].y + (base[j].h - h) / 2).toFixed(2));
+      }
+      raf = requestAnimationFrame(frame);
+    }
+
+    return {
+      start: function () {
+        if (reduceMotion || raf || !window.requestAnimationFrame) return;
+        t0 = 0;
+        raf = requestAnimationFrame(frame);
+      },
+      stop: function () {
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+        rest();
+      }
+    };
+  })();
+
   bgm.addEventListener('play', function () {
     musicBtn.classList.add('playing');
     musicBtn.setAttribute('aria-label', '暂停音乐');
     musicBtn.setAttribute('title', '暂停音乐');
+    if (equalizer) equalizer.start();
     hideCoach();
   });
 
@@ -925,6 +983,7 @@ try {
     musicBtn.classList.remove('playing');
     musicBtn.setAttribute('aria-label', '播放音乐');
     musicBtn.setAttribute('title', '播放音乐');
+    if (equalizer) equalizer.stop();
   });
 
   bgm.addEventListener('error', function () {
@@ -967,14 +1026,50 @@ try {
   var wrapEl = $('letter');
   wrapEl.style.whiteSpace = 'pre-line';
 
-  function renderAll() {
-    if (typeTimer) { clearTimeout(typeTimer); typeTimer = null; }
+  /* ── 排版一次成型 ──
+     全文一次性写进 DOM，每个字先 visibility:hidden 藏着，再一个个点亮。
+     隐藏的字照样占位，所以信纸从出现那一刻就是最终高度：
+     不再"打一个字长一截"，旋转屏幕、改宽度也不用重新量高度。 */
+  var chars = [];        // [{el, ch}]，按阅读顺序排好的待显字符
+  var built = false;
+
+  function splitChars(s) {
+    // 按码点切：emoji 这类代理对不会被劈成两个乱码
+    var m = String(s).match(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\s\S]/g);
+    return m || [];
+  }
+
+  function buildLetter() {
+    if (built) return;
+    built = true;
     wrapEl.innerHTML = '';
-    paras.forEach(function (t) {
+    chars = [];
+    paras.forEach(function (text) {
       var p = document.createElement('p');
-      p.textContent = t;
+      splitChars(text).forEach(function (ch) {
+        var el;
+        if (ch === '\n') {
+          el = document.createElement('br');   // 隐藏的 <br> 仍然占一行，只是看不见
+        } else {
+          el = document.createElement('span');
+          el.textContent = ch;
+        }
+        el.style.visibility = 'hidden';
+        p.appendChild(el);
+        chars.push({ el: el, ch: ch });
+      });
       wrapEl.appendChild(p);
     });
+  }
+
+  function showAll() {
+    for (var i = 0; i < chars.length; i++) chars[i].el.style.visibility = '';
+  }
+
+  function renderAll() {
+    if (typeTimer) { clearTimeout(typeTimer); typeTimer = null; }
+    buildLetter();
+    showAll();
     finishLetter();
   }
 
@@ -992,45 +1087,38 @@ try {
   function startTyping() {
     if (typingDone || typingStarted) return;
     typingStarted = true;
-    if (reduceMotion || !paras.length) { renderAll(); return; }
+    buildLetter();
+    if (reduceMotion || !chars.length) { renderAll(); return; }
 
-    wrapEl.innerHTML = '';
     var caret = document.createElement('span');
     caret.className = 'caret';
-
-    var pi = 0, ci = 0, pEl = null;
-
-    function nextPara() {
-      if (pi >= paras.length) { finishLetter(); return; }
-      pEl = document.createElement('p');
-      pEl.appendChild(caret);
-      wrapEl.appendChild(pEl);
-      ci = 0;
-      step();
-    }
-
-    function step() {
-      var text = paras[pi];
-      if (ci >= text.length) {
-        pi += 1;
-        typeTimer = setTimeout(nextPara, 400);
-        return;
-      }
-      var ch = text.charAt(ci);
-      ci += 1;
-      if (ch === '\n') {
-        pEl.insertBefore(document.createElement('br'), caret);
-      } else {
-        pEl.insertBefore(document.createTextNode(ch), caret);
-      }
-      var pause = (ch === '。' || ch === '，' || ch === '、' || ch === '—' || ch === '\n') ? 230 : 38;
-      typeTimer = setTimeout(step, pause);
-    }
+    if (chars[0].el.parentNode) chars[0].el.parentNode.insertBefore(caret, chars[0].el);
+    else wrapEl.appendChild(caret);
 
     var skipEl = $('skip');
     if (skipEl) skipEl.hidden = false;
-    nextPara();
+
+    var i = 0;
+    function step() {
+      if (i >= chars.length) { finishLetter(); return; }
+      var cur = chars[i++];
+      cur.el.style.visibility = '';        // 点亮一个字，位置早就留好了
+      var next = chars[i];
+      if (next) {
+        if (next.el.parentNode) next.el.parentNode.insertBefore(caret, next.el);
+      } else if (cur.el.parentNode) {
+        cur.el.parentNode.appendChild(caret);   // 最后一个字：光标停在它后面
+      }
+      var pause = 38;
+      if (cur.ch === '。' || cur.ch === '，' || cur.ch === '、' || cur.ch === '—' || cur.ch === '\n') pause = 230;
+      if (next && next.el.parentNode !== cur.el.parentNode) pause = 400;   // 换段停久一点
+      typeTimer = setTimeout(step, pause);
+    }
+    step();
   }
+
+  /* 页面一加载就把全文排进去：信纸高度从这一刻起不再变化 */
+  buildLetter();
 
   function openGift() {
     if (opened) return;
